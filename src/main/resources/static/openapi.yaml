@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Discodeit API 문서
   description: Discodeit 프로젝트의 Swagger API 문서입니다.
-  version: v2.2-M11
+  version: v3.0-M12
 servers:
   - url: http://localhost:8080
     description: 로컬 서버

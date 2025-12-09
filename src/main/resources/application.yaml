@@ -1,7 +1,7 @@
 spring:
   application:
     name: Discodeit
-    version: 2.2-M11
+    version: 3.0-M12
   servlet:
     multipart:
       max-file-size: 10MB
