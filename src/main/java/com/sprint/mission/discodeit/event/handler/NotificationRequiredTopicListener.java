@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sprint.mission.discodeit.dto.message.MessageDto;
 import com.sprint.mission.discodeit.dto.notification.NotificationCreateRequest;
 import com.sprint.mission.discodeit.entity.ReadStatus;
 import com.sprint.mission.discodeit.entity.Role;
@@ -33,16 +34,17 @@ public class NotificationRequiredTopicListener {
 	@KafkaListener(topics = "discodeit.MessageCreatedEvent")
 	public void onMessageCreatedEvent(String kafkaEvent) throws JsonProcessingException {
 		MessageCreatedEvent event = objectMapper.readValue(kafkaEvent, MessageCreatedEvent.class);
+		MessageDto messageDto = event.messageDto();
 		log.info("[Kafka] MessageCreatedEvent received: {}", event);
-		String title = event.authorName() + " (#" + ((event.channelName() == null)
+		String title = messageDto.author().username() + " (#" + ((event.channelName() == null)
 			? "Private Channel" : event.channelName()) + ")";
-		String content = event.content();
+		String content = messageDto.content();
 
-		List<NotificationCreateRequest> requests = readStatusRepository.findAllByChannelId(event.channelId())
+		List<NotificationCreateRequest> requests = readStatusRepository.findAllByChannelId(messageDto.channelId())
 			.stream()
 			.filter(ReadStatus::isNotificationEnabled)
 			.map(rs -> rs.getUser().getId())
-			.filter(id -> !id.equals(event.authorId()))
+			.filter(id -> !id.equals(messageDto.author().id()))
 			.map(id -> new NotificationCreateRequest(id, title, content))
 			.toList();
 
