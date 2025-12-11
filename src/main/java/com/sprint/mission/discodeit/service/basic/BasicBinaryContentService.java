@@ -13,6 +13,7 @@ import com.sprint.mission.discodeit.dto.binarycontent.NewBinaryContent;
 import com.sprint.mission.discodeit.entity.BinaryContent;
 import com.sprint.mission.discodeit.entity.BinaryContentStatus;
 import com.sprint.mission.discodeit.event.BinaryContentCreatedEvent;
+import com.sprint.mission.discodeit.event.BinaryContentUpdatedEvent;
 import com.sprint.mission.discodeit.exception.binarycontent.BinaryContentNotFoundException;
 import com.sprint.mission.discodeit.mapper.BinaryContentMapper;
 import com.sprint.mission.discodeit.repository.BinaryContentRepository;
@@ -71,8 +72,12 @@ public class BasicBinaryContentService implements BinaryContentService {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void updateStatus(UUID id, BinaryContentStatus status) {
 		BinaryContent binaryContent = validateId(id);
+		BinaryContentDto previousDto = binaryContentMapper.toDto(binaryContent);
+
 		binaryContent.updateStatus(status);
-		binaryContentMapper.toDto(binaryContentRepository.save(binaryContent));
+		BinaryContentDto newDto = binaryContentMapper.toDto(binaryContentRepository.save(binaryContent));
+		eventPublisher.publishEvent(new BinaryContentUpdatedEvent(
+			previousDto, newDto, binaryContent.getUpdatedAt()));
 	}
 
 	private BinaryContent validateId(UUID id) {

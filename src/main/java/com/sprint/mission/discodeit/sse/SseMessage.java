@@ -4,10 +4,6 @@ import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 
-import org.springframework.http.MediaType;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
 import lombok.Getter;
 
 @Getter
@@ -36,14 +32,5 @@ public class SseMessage {
 
 	public boolean isReceivable(UUID receiverId) {
 		return broadcast || receiverIds.contains(receiverId);
-	}
-
-	public Set<ResponseBodyEmitter.DataWithMediaType> toEvent() {
-		SseEmitter.SseEventBuilder builder = SseEmitter.event()
-			.id(eventId.toString())
-			.name(eventName)
-			.data(data);
-
-		return Set.of(new ResponseBodyEmitter.DataWithMediaType(builder, MediaType.APPLICATION_JSON));
 	}
 }

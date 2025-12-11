@@ -4,14 +4,12 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
-import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.DataWithMediaType;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import lombok.RequiredArgsConstructor;
@@ -87,10 +85,12 @@ public class SseService {
 		log.debug("[SseService#broadcast] SSE broadcast. eventName={}", eventName);
 		SseMessage message = sseMessageRepository.save(
 			SseMessage.createBroadcast(eventName, data));
-		Set<DataWithMediaType> events = message.toEvent();
 		sseEmitterRepository.findAll().forEach(emitter -> {
 			try {
-				emitter.send(events);
+				emitter.send(SseEmitter.event()
+					.id(message.getEventId().toString())
+					.name(message.getEventName())
+					.data(data));
 			} catch (Exception e) {
 				log.error("[SseService#broadcast] Failed to send message: {}", e.getMessage());
 				emitter.completeWithError(e);
