@@ -1,11 +1,15 @@
 package com.sprint.mission.discodeit.service.basic;
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +23,9 @@ import com.sprint.mission.discodeit.entity.ChannelType;
 import com.sprint.mission.discodeit.entity.Message;
 import com.sprint.mission.discodeit.entity.ReadStatus;
 import com.sprint.mission.discodeit.entity.User;
+import com.sprint.mission.discodeit.event.ChannelCreatedEvent;
+import com.sprint.mission.discodeit.event.ChannelDeletedEvent;
+import com.sprint.mission.discodeit.event.ChannelUpdatedEvent;
 import com.sprint.mission.discodeit.exception.channel.ChannelNotFoundException;
 import com.sprint.mission.discodeit.exception.channel.PrivateChannelUpdateException;
 import com.sprint.mission.discodeit.exception.user.UserNotFoundException;
@@ -42,6 +49,7 @@ public class BasicChannelService implements ChannelService {
 	private final MessageRepository messageRepository;
 	private final UserRepository userRepository;
 	private final ChannelMapper channelMapper;
+	private final ApplicationEventPublisher eventPublisher;
 
 	@Override
 	@Transactional
@@ -61,6 +69,7 @@ public class BasicChannelService implements ChannelService {
 			findLastMessageAt(channel.getId()));
 
 		log.info("[ChannelService#create(public)] Channel created: {}", dto.forLog());
+		eventPublisher.publishEvent(new ChannelCreatedEvent(dto, channel.getCreatedAt()));
 
 		return dto;
 	}
@@ -92,6 +101,8 @@ public class BasicChannelService implements ChannelService {
 			findParticipants(channel.getId()),
 			findLastMessageAt(channel.getId()));
 		log.info("[ChannelService#create(private)] Channel created: {}", dto.forLog());
+
+		eventPublisher.publishEvent(new ChannelCreatedEvent(dto, channel.getCreatedAt()));
 
 		return dto;
 	}
@@ -130,6 +141,10 @@ public class BasicChannelService implements ChannelService {
 		PublicChannelUpdateRequest request) {
 		log.debug("[ChannelService#update] try: channelId={}, request={}", channelId, request);
 		Channel channel = validateId(channelId);
+		ChannelDto previousDto = channelMapper.toDto(
+			channel,
+			findParticipants(channelId),
+			findLastMessageAt(channelId));
 
 		if (channel.getType() == ChannelType.PRIVATE) {
 			throw new PrivateChannelUpdateException().addDetail("channelId", channelId);
@@ -137,14 +152,15 @@ public class BasicChannelService implements ChannelService {
 		channel.update(request.newName(), request.newDescription());
 		channelRepository.save(channel);
 
-		ChannelDto dto = channelMapper.toDto(
+		ChannelDto newDto = channelMapper.toDto(
 			channel,
 			findParticipants(channelId),
 			findLastMessageAt(channelId));
 
-		log.info("[ChannelService#update] Channel updated: {}", dto.forLog());
+		log.info("[ChannelService#update] Channel updated: {}", newDto.forLog());
+		eventPublisher.publishEvent(new ChannelUpdatedEvent(previousDto, newDto, channel.getCreatedAt()));
 
-		return dto;
+		return newDto;
 	}
 
 	@Override
@@ -153,7 +169,11 @@ public class BasicChannelService implements ChannelService {
 	@CacheEvict(value = "channels", allEntries = true)
 	public void delete(UUID channelId) {
 		log.debug("[ChannelService#delete] try channelId={}", channelId);
-		validateId(channelId);
+		ChannelDto dto = channelMapper.toDto(
+			validateId(channelId),
+			findParticipants(channelId),
+			findLastMessageAt(channelId)
+		);
 
 		readStatusRepository.findAllByChannelId(channelId)
 			.forEach(readStatus -> {
@@ -170,6 +190,7 @@ public class BasicChannelService implements ChannelService {
 			});
 
 		channelRepository.deleteById(channelId);
+		eventPublisher.publishEvent(new ChannelDeletedEvent(dto, Instant.now()));
 		log.info("[ChannelService#delete] Channel deleted: channelId={}", channelId);
 	}
 
