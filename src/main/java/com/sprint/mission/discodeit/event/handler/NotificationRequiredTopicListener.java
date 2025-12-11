@@ -1,6 +1,8 @@
 package com.sprint.mission.discodeit.event.handler;
 
-import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -8,7 +10,6 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sprint.mission.discodeit.dto.message.MessageDto;
-import com.sprint.mission.discodeit.dto.notification.NotificationCreateRequest;
 import com.sprint.mission.discodeit.entity.ReadStatus;
 import com.sprint.mission.discodeit.entity.Role;
 import com.sprint.mission.discodeit.entity.User;
@@ -40,15 +41,13 @@ public class NotificationRequiredTopicListener {
 			? "Private Channel" : event.channelName()) + ")";
 		String content = messageDto.content();
 
-		List<NotificationCreateRequest> requests = readStatusRepository.findAllByChannelId(messageDto.channelId())
-			.stream()
+		Set<UUID> receiverIds = readStatusRepository.findAllByChannelId(messageDto.channelId()).stream()
 			.filter(ReadStatus::isNotificationEnabled)
 			.map(rs -> rs.getUser().getId())
 			.filter(id -> !id.equals(messageDto.author().id()))
-			.map(id -> new NotificationCreateRequest(id, title, content))
-			.toList();
+			.collect(Collectors.toSet());
 
-		notificationService.createAll(requests);
+		notificationService.create(receiverIds, title, content);
 	}
 
 	@KafkaListener(topics = "discodeit.RoleUpdatedEvent")
@@ -57,9 +56,7 @@ public class NotificationRequiredTopicListener {
 		log.info("[Kafka] RoleUpdatedEvent received: {}", event);
 		String title = "권한이 변경되었습니다.";
 		String content = event.oldRole() + " -> " + event.newRole();
-		notificationService.create(
-			new NotificationCreateRequest(event.userId(), title, content)
-		);
+		notificationService.create(Set.of(event.userId()), title, content);
 	}
 
 	@KafkaListener(topics = "discodeit.S3UploadFailedEvent")
@@ -70,11 +67,11 @@ public class NotificationRequiredTopicListener {
 		String content = "RequestId: " + event.requestId() + "\n"
 			+ "BinaryContentId: " + event.binaryContentId() + "\n"
 			+ "Error: " + event.errorMessage();
-		List<NotificationCreateRequest> requests = userRepository.findByRole(Role.ADMIN).stream()
+		Set<UUID> receiverIds = userRepository.findByRole(Role.ADMIN).stream()
 			.map(User::getId)
-			.map(id -> new NotificationCreateRequest(id, title, content))
-			.toList();
-		notificationService.createAll(requests);
+			.collect(Collectors.toSet());
+
+		notificationService.create(receiverIds, title, content);
 	}
 
 }

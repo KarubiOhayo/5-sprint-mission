@@ -1,21 +1,26 @@
 package com.sprint.mission.discodeit.service.basic;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
+import org.springframework.cache.Cache;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.cache.RedisCacheManager;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.sprint.mission.discodeit.dto.notification.NotificationCreateRequest;
 import com.sprint.mission.discodeit.dto.notification.NotificationDto;
 import com.sprint.mission.discodeit.entity.Notification;
+import com.sprint.mission.discodeit.event.NotificationCreatedEvent;
 import com.sprint.mission.discodeit.exception.DiscodeitException;
 import com.sprint.mission.discodeit.exception.ErrorCode;
 import com.sprint.mission.discodeit.exception.user.UserNotFoundException;
+import com.sprint.mission.discodeit.mapper.NotificationMapper;
 import com.sprint.mission.discodeit.repository.NotificationRepository;
 import com.sprint.mission.discodeit.repository.UserRepository;
 import com.sprint.mission.discodeit.service.NotificationService;
@@ -30,34 +35,33 @@ public class BasicNotificationService implements NotificationService {
 
 	private final NotificationRepository notificationRepository;
 	private final UserRepository userRepository;
+	private final RedisCacheManager cacheManager;
+	private final ApplicationEventPublisher eventPublisher;
+	private final NotificationMapper notificationMapper;
 
 	@Override
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
-	@CacheEvict(value = "notifications", key = "#request.receiverId()")
-	public void create(NotificationCreateRequest request) {
-		log.debug("Creating notification: {}", request);
-		Notification notification = new Notification(
-			request.receiverId(),
-			request.title(),
-			request.content()
-		);
-		notificationRepository.save(notification);
-		log.info("Created notification: {}", notification);
-	}
-
-	@Override
-	@CacheEvict(value = "notifications", allEntries = true)
-	public void createAll(List<NotificationCreateRequest> requests) {
-		log.debug("Creating notifications: {}", requests);
-		List<Notification> notifications = requests.stream()
-			.map(request -> new Notification(
-				request.receiverId(),
-				request.title(),
-				request.content()
+	public void create(Set<UUID> receiverIds, String title, String content) {
+		if (receiverIds.isEmpty()) {
+			log.warn("No receivers found for request: {}", receiverIds);
+			return;
+		}
+		log.debug("Creating notification: {}", receiverIds);
+		List<Notification> notifications = receiverIds.stream()
+			.map(id -> new Notification(
+				id,
+				title,
+				content
 			))
 			.toList();
-		notificationRepository.saveAll(notifications);
-		log.info("Created notifications: {}", notifications);
+		List<NotificationDto> dtos = notificationRepository.saveAll(notifications).stream()
+			.map(notificationMapper::toDto)
+			.toList();
+		for (NotificationDto dto : dtos) {
+			eventPublisher.publishEvent(new NotificationCreatedEvent(dto, dto.createdAt()));
+		}
+		evictNotificationCache(receiverIds);
+		log.info("Created notification: {}", notifications);
 	}
 
 	@Override
@@ -87,5 +91,17 @@ public class BasicNotificationService implements NotificationService {
 			throw new DiscodeitException(ErrorCode.NOTIFICATION_NOT_FOUND).addDetail("notificationId", id);
 		}
 		notificationRepository.deleteById(id);
+	}
+
+	private void evictNotificationCache(Set<UUID> notificationIds) {
+		Cache cache = cacheManager.getCache("notifications");
+		if (cache != null) {
+			for (UUID notificationId : notificationIds) {
+				cache.evict(notificationId);
+			}
+			log.debug("Evicting notification cache for notificationIds: {}", notificationIds);
+		} else {
+			log.warn("No cache found for notificationIds");
+		}
 	}
 }
