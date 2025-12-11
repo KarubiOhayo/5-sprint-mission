@@ -1,0 +1,18 @@
+package com.sprint.mission.discodeit.event;
+
+import java.time.Instant;
+
+import lombok.Getter;
+
+@Getter
+public abstract class UpdatedEvent<T> {
+	private final T from;
+	private final T to;
+	private final Instant updatedAt;
+
+	public UpdatedEvent(T from, T to, Instant updatedAt) {
+		this.from = from;
+		this.to = to;
+		this.updatedAt = updatedAt;
+	}
+}
