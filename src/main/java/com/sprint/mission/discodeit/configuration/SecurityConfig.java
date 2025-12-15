@@ -5,6 +5,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -132,7 +133,7 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	public JwtRegistry<UUID> jwtRegistry(JwtTokenProvider jwtTokenProvider) {
-		return new InMemoryJwtRegistry(1, jwtTokenProvider);
+	public JwtRegistry<UUID> jwtRegistry(JwtTokenProvider jwtTokenProvider, ApplicationEventPublisher eventPublisher) {
+		return new InMemoryJwtRegistry(1, jwtTokenProvider, eventPublisher);
 	}
 }

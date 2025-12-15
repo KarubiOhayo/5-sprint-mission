@@ -1,5 +1,6 @@
 package com.sprint.mission.discodeit.service.basic;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,6 +19,9 @@ import com.sprint.mission.discodeit.dto.user.UserDto;
 import com.sprint.mission.discodeit.entity.BinaryContent;
 import com.sprint.mission.discodeit.entity.User;
 import com.sprint.mission.discodeit.event.BinaryContentCreatedEvent;
+import com.sprint.mission.discodeit.event.UserCreatedEvent;
+import com.sprint.mission.discodeit.event.UserDeletedEvent;
+import com.sprint.mission.discodeit.event.UserUpdatedEvent;
 import com.sprint.mission.discodeit.exception.user.UserAlreadyExistsException;
 import com.sprint.mission.discodeit.exception.user.UserNotFoundException;
 import com.sprint.mission.discodeit.log.LogUtils;
@@ -57,6 +61,8 @@ public class BasicUserService implements UserService {
 
 		log.info("[UserService#create] User created: {}", dto.forLog());
 
+		eventPublisher.publishEvent(new UserCreatedEvent(dto, user.getCreatedAt()));
+
 		return dto;
 	}
 
@@ -83,9 +89,13 @@ public class BasicUserService implements UserService {
 		log.debug("[UserService#update] try id={}, command={}", userId, command.forLog());
 
 		User user = validateId(userId);
+		UserDto previousDto = userMapper.toDto(user);
+
 		String newUserName = command.username();
 		String newEmail = command.email();
 		String newPassword = command.password();
+		String encodedPassword = Optional.ofNullable(newPassword).map(passwordEncoder::encode)
+			.orElse(user.getPassword());
 
 		if (command.username() != null && !user.getUsername().equals(command.username())) {
 			validateUsername(newUserName);
@@ -101,12 +111,13 @@ public class BasicUserService implements UserService {
 			log.debug("[UserService#update] old profile deleted: {}", user.getProfile().getId());
 		}
 
-		user.update(newUserName, newEmail, newPassword, newProfile, null);
-		UserDto dto = userMapper.toDto(userRepository.save(user));
+		user.update(newUserName, newEmail, encodedPassword, newProfile, null);
+		UserDto newDto = userMapper.toDto(userRepository.save(user));
 
-		log.info("[UserService#update] User updated: {}", dto.forLog());
+		eventPublisher.publishEvent(new UserUpdatedEvent(previousDto, newDto, user.getUpdatedAt()));
+		log.info("[UserService#update] User updated: {}", newDto.forLog());
 
-		return dto;
+		return newDto;
 	}
 
 	@Override
@@ -123,6 +134,8 @@ public class BasicUserService implements UserService {
 		}
 
 		userRepository.deleteById(user.getId());
+		eventPublisher.publishEvent(new UserDeletedEvent(userMapper.toDto(user), Instant.now()));
+
 		log.info("[UserService#delete] User deleted: id={}, username={}, email={}",
 			user.getId(), user.getUsername(), LogUtils.maskEmail(user.getEmail()));
 	}

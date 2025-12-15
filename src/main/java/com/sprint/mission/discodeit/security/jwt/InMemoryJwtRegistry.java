@@ -1,15 +1,21 @@
 package com.sprint.mission.discodeit.security.jwt;
 
+import java.time.Instant;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.sprint.mission.discodeit.dto.user.JwtInformation;
+import com.sprint.mission.discodeit.dto.user.UserDto;
+import com.sprint.mission.discodeit.event.UserUpdatedEvent;
 
 import lombok.RequiredArgsConstructor;
 
@@ -22,8 +28,10 @@ public class InMemoryJwtRegistry implements JwtRegistry<UUID> {
 
 	private final int maxActiveJwtCount;
 	private final JwtTokenProvider jwtTokenProvider;
+	private final ApplicationEventPublisher eventPublisher;
 
 	@Override
+	@Transactional
 	public void registerJwtInformation(JwtInformation jwtInformation) {
 		origin.compute(jwtInformation.getUserDto().id(), (key, queue) -> {
 			if (queue == null) {
@@ -46,20 +54,48 @@ public class InMemoryJwtRegistry implements JwtRegistry<UUID> {
 			);
 			return queue;
 		});
+		UserDto prevUserDto = jwtInformation.getUserDto();
+		UserDto newUserDto = new UserDto(
+			prevUserDto.id(),
+			prevUserDto.username(),
+			prevUserDto.email(),
+			prevUserDto.profile(),
+			true,
+			prevUserDto.role()
+		);
+		eventPublisher.publishEvent(new UserUpdatedEvent(prevUserDto, newUserDto, Instant.now()));
 	}
 
 	@Override
+	@Transactional
 	public void invalidateJwtInformationByUserId(UUID userId) {
+		AtomicReference<UserDto> captured = new AtomicReference<>();
 		origin.computeIfPresent(userId, (key, queue) -> {
-			queue.forEach(jwtInformation -> {
-				removeTokenIndex(
-					jwtInformation.getAccessToken(),
-					jwtInformation.getRefreshToken()
-				);
-			});
+			JwtInformation first = queue.peek();
+			if (first != null) {
+				captured.set(first.getUserDto());
+			}
+			queue.forEach(jwtInformation -> removeTokenIndex(
+				jwtInformation.getAccessToken(),
+				jwtInformation.getRefreshToken()
+			));
 			queue.clear();
 			return null;
+
 		});
+		UserDto prevUserDto = captured.get();
+
+		if (prevUserDto != null) {
+			UserDto newUserDto = new UserDto(
+				prevUserDto.id(),
+				prevUserDto.username(),
+				prevUserDto.email(),
+				prevUserDto.profile(),
+				false,
+				prevUserDto.role()
+			);
+			eventPublisher.publishEvent(new UserUpdatedEvent(prevUserDto, newUserDto, Instant.now()));
+		}
 	}
 
 	@Override
